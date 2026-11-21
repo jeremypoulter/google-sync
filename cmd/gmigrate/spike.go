@@ -161,10 +161,14 @@ func cmdSpikeDrive(ctx context.Context, args []string, out io.Writer) error {
 	var cleanup *drivecopy.CleanupError
 	if errors.As(err, &cleanup) {
 		p.PendingUnshares = append(p.PendingUnshares, profile.PendingUnshare{FileID: cleanup.FileID, PermID: cleanup.PermID})
+		p.Checks[profile.CheckDriveCopy] = &profile.Check{At: time.Now().UTC(), Detail: err.Error()}
+		if serr := p.Save(); serr != nil {
+			return fmt.Errorf("%w; ALSO could not record it for retry (%v): remove the new account from the sharing of source file %s by hand", err, serr, cleanup.FileID)
+		}
 		if res != nil {
 			fmt.Fprintf(out, "Copied %q to %s, but the temporary share could not be removed; it will be retried on the next run.\n", res.Name, res.DestID)
 		}
-		return fail(p, profile.CheckDriveCopy, err)
+		return err
 	}
 	if err != nil {
 		return fail(p, profile.CheckDriveCopy, err)

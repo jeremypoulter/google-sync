@@ -67,10 +67,10 @@ Useful options:
 - **Token check**: a refresh failing with `invalid_grant` can have ordinary
   causes: a password change on that account, removing GMigrate from its
   Third-party connections page, or the app being set back to Testing. Rule
-  those out, sign in again and repeat the 8-day wait. Only if a fresh pair of
-  tokens fails again does the "In production" publishing not avoid the 7-day
-  expiry, and the auth design has to change before M1 (fallback: a weekly
-  re-sign-in prompt).
+  those out, sign in again and repeat the 8-day wait. If a fresh pair of
+  tokens fails again, investigate whether "In production" publishing really
+  avoids the 7-day expiry for this app before building M1 on it; if it does
+  not, the fallback is a weekly re-sign-in prompt.
 
 ## Where things are stored
 
