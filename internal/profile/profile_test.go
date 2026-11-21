@@ -25,6 +25,31 @@ func TestOpenSaveReopen(t *testing.T) {
 	}
 }
 
+func TestResetChecksForSignIn(t *testing.T) {
+	p, err := Open(t.TempDir(), "x")
+	if err != nil {
+		t.Fatal(err)
+	}
+	pass := func() {
+		for _, c := range CheckOrder {
+			p.Checks[c.Name] = &Check{Passed: true}
+		}
+	}
+	p.Accounts[config.RoleNew] = &Account{Email: "a@gmail.com"}
+
+	pass()
+	p.ResetChecksForSignIn(config.RoleNew, "A@gmail.com")
+	if p.Checks[CheckTokenAge] != nil || p.Checks[CheckGmailImport] == nil {
+		t.Fatalf("same account: %+v", p.Checks)
+	}
+
+	pass()
+	p.ResetChecksForSignIn(config.RoleNew, "b@gmail.com")
+	if p.Checks[CheckGmailImport] != nil || p.Checks[CheckDriveCopy] != nil || p.Checks[CheckSignInOld] == nil {
+		t.Fatalf("changed account: %+v", p.Checks)
+	}
+}
+
 func TestInvalidName(t *testing.T) {
 	for _, n := range []string{"", "../x", "a b", "-x"} {
 		if _, err := Open(t.TempDir(), n); err == nil {

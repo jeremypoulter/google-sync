@@ -82,19 +82,30 @@ func (c *Copier) Copy(ctx context.Context, srcID string) (res *Result, err error
 			PropSrcModified: f.ModifiedTime,
 		},
 	}
+	// Always name the parent: without one, files.copy may put the copy in
+	// the source's folder (and inherit its sharing) if the new account can
+	// see that folder.
+	meta.Parents = []string{"root"}
 	if c.DstFolder != "" {
 		meta.Parents = []string{c.DstFolder}
 	}
 
-	permID, err := c.share(ctx, f.Id)
+	permID, created, err := c.share(ctx, f.Id)
 	if err != nil {
 		return nil, err
 	}
-	defer func() {
-		if perr := c.unshare(ctx, f.Id, permID); perr != nil && err == nil {
-			err = perr
-		}
-	}()
+	if created {
+		defer func() {
+			if perr := c.Unshare(ctx, f.Id, permID); perr != nil {
+				cleanup := &CleanupError{FileID: f.Id, PermID: permID, Err: perr}
+				if err == nil {
+					err = cleanup
+				} else {
+					err = errors.Join(err, cleanup)
+				}
+			}
+		}()
+	}
 
 	copied, err := c.copyWithRetry(ctx, f.Id, meta)
 	if err != nil && isCopyRefused(err) && !strings.HasPrefix(f.MimeType, "application/vnd.google-apps.") {
@@ -121,19 +132,48 @@ func (c *Copier) FindCopy(ctx context.Context, srcID string) (*drive.File, error
 	return nil, nil
 }
 
-func (c *Copier) share(ctx context.Context, fileID string) (string, error) {
+// CleanupError means the file was handled but its temporary share to the new
+// account could not be removed. Callers should store FileID and PermID and
+// retry with Unshare before trusting later runs.
+type CleanupError struct {
+	FileID, PermID string
+	Err            error
+}
+
+func (e *CleanupError) Error() string {
+	return fmt.Sprintf("temporary share on %s still in place: %v", e.FileID, e.Err)
+}
+
+func (e *CleanupError) Unwrap() error { return e.Err }
+
+// share gives the new account read access to the source file. If the account
+// already had access, that permission is reused and created is false, so the
+// caller must not remove it.
+func (c *Copier) share(ctx context.Context, fileID string) (permID string, created bool, err error) {
+	existing, err := c.Src.Permissions.List(fileID).SupportsAllDrives(true).
+		Fields("permissions(id,type,emailAddress)").Context(ctx).Do()
+	if err != nil {
+		return "", false, fmt.Errorf("reading sharing of %s: %w", fileID, err)
+	}
+	for _, p := range existing.Permissions {
+		if p.Type == "user" && strings.EqualFold(p.EmailAddress, c.DstEmail) {
+			return p.Id, false, nil
+		}
+	}
 	p, err := c.Src.Permissions.Create(fileID, &drive.Permission{
 		Type:         "user",
 		Role:         "reader",
 		EmailAddress: c.DstEmail,
 	}).SendNotificationEmail(false).SupportsAllDrives(true).Fields("id").Context(ctx).Do()
 	if err != nil {
-		return "", fmt.Errorf("sharing file to %s (is sharing outside the domain allowed in the Admin console?): %w", c.DstEmail, err)
+		return "", false, fmt.Errorf("sharing file to %s (is sharing outside the domain allowed in the Admin console?): %w", c.DstEmail, err)
 	}
-	return p.Id, nil
+	return p.Id, true, nil
 }
 
-func (c *Copier) unshare(ctx context.Context, fileID, permID string) error {
+// Unshare removes a temporary share created by Copy. A share that is already
+// gone counts as removed.
+func (c *Copier) Unshare(ctx context.Context, fileID, permID string) error {
 	// Use a fresh context so a cancelled run still removes the share.
 	cctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
 	defer cancel()

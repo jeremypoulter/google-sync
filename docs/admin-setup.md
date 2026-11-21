@@ -56,9 +56,10 @@ Drive files are copied by sharing each file to the person's new account and
 copying it from there, so files must be shareable outside the domain.
 
 Admin console > **Apps > Google Workspace > Drive and Docs > Sharing
-settings > Sharing options**: allow sharing outside the organisation (or use
-*Allowlisted domains* and add `gmail.com`). Turn off "warn when sharing
-outside" if you prefer fewer prompts.
+settings > Sharing options**: set sharing outside the organisation to **On**
+(for at least the family's users). The *Allowlisted domains* option does not
+work here, because it only allows Workspace domains, not personal Gmail
+accounts. Turn off "warn when sharing outside" if you prefer fewer prompts.
 
 ## 6. Takeout (needed from M3)
 

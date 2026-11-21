@@ -16,6 +16,7 @@ import (
 	"golang.org/x/oauth2"
 
 	"github.com/jeremypoulter/google-sync/internal/config"
+	"github.com/jeremypoulter/google-sync/internal/tokenstore"
 )
 
 func fakeIDToken(t *testing.T, claims map[string]any) string {
@@ -127,5 +128,38 @@ func TestSignInStateMismatch(t *testing.T) {
 	_, err := SignIn(context.Background(), cfg, SignInOptions{OpenBrowser: browser, Timeout: 10 * time.Second})
 	if err == nil || !strings.Contains(err.Error(), "state") {
 		t.Fatalf("err = %v, want state mismatch", err)
+	}
+}
+
+type staticSource struct{ tok *oauth2.Token }
+
+func (s staticSource) Token() (*oauth2.Token, error) { return s.tok, nil }
+
+func TestSavingSourceRetriesFailedSave(t *testing.T) {
+	rec := &tokenstore.Record{Token: &oauth2.Token{AccessToken: "old", RefreshToken: "rt"}}
+	saves := 0
+	s := &savingSource{
+		base: staticSource{&oauth2.Token{AccessToken: "new"}},
+		rec:  rec,
+		save: func(r *tokenstore.Record) error {
+			saves++
+			if saves == 1 {
+				return fmt.Errorf("disk full")
+			}
+			return nil
+		},
+	}
+	if _, err := s.Token(); err == nil {
+		t.Fatal("expected first save to fail")
+	}
+	if rec.Token.AccessToken != "old" {
+		t.Fatal("record adopted a token that was not saved")
+	}
+	tok, err := s.Token()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if saves != 2 || rec.Token.AccessToken != "new" || tok.RefreshToken != "rt" {
+		t.Fatalf("saves=%d rec=%+v tok=%+v", saves, rec.Token, tok)
 	}
 }

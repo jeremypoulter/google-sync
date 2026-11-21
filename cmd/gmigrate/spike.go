@@ -120,6 +120,28 @@ func cmdSpikeDrive(ctx context.Context, args []string, out io.Writer) error {
 		return err
 	}
 
+	cp := &drivecopy.Copier{Src: src, Dst: dst, DstEmail: dstAcct.Email, DstFolder: *folder}
+
+	// Remove any temporary shares an earlier run could not clean up.
+	if len(p.PendingUnshares) > 0 {
+		var still []profile.PendingUnshare
+		for _, pu := range p.PendingUnshares {
+			if err := cp.Unshare(ctx, pu.FileID, pu.PermID); err != nil {
+				fmt.Fprintf(out, "Still cannot remove the temporary share on %s: %v\n", pu.FileID, err)
+				still = append(still, pu)
+				continue
+			}
+			fmt.Fprintf(out, "Removed a leftover temporary share on %s\n", pu.FileID)
+		}
+		p.PendingUnshares = still
+		if err := p.Save(); err != nil {
+			return err
+		}
+		if len(still) > 0 {
+			return fail(p, profile.CheckDriveCopy, errors.New("temporary shares from an earlier run are still in place; try again later"))
+		}
+	}
+
 	id := *fileID
 	if id == "" {
 		list, err := src.Files.List().
@@ -134,9 +156,16 @@ func cmdSpikeDrive(ctx context.Context, args []string, out io.Writer) error {
 		id = list.Files[0].Id
 	}
 
-	cp := &drivecopy.Copier{Src: src, Dst: dst, DstEmail: dstAcct.Email, DstFolder: *folder}
 	start := time.Now()
 	res, err := cp.Copy(ctx, id)
+	var cleanup *drivecopy.CleanupError
+	if errors.As(err, &cleanup) {
+		p.PendingUnshares = append(p.PendingUnshares, profile.PendingUnshare{FileID: cleanup.FileID, PermID: cleanup.PermID})
+		if res != nil {
+			fmt.Fprintf(out, "Copied %q to %s, but the temporary share could not be removed; it will be retried on the next run.\n", res.Name, res.DestID)
+		}
+		return fail(p, profile.CheckDriveCopy, err)
+	}
 	if err != nil {
 		return fail(p, profile.CheckDriveCopy, err)
 	}

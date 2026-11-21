@@ -13,6 +13,7 @@ import (
 	"path/filepath"
 	"regexp"
 	"runtime"
+	"strings"
 	"time"
 
 	"github.com/jeremypoulter/google-sync/internal/config"
@@ -56,6 +57,15 @@ type Data struct {
 	Name     string                   `json:"name"`
 	Accounts map[config.Role]*Account `json:"accounts"`
 	Checks   map[string]*Check        `json:"checks"`
+	// PendingUnshares are temporary Drive shares that could not be removed;
+	// they are retried before the next Drive copy.
+	PendingUnshares []PendingUnshare `json:"pending_unshares,omitempty"`
+}
+
+// PendingUnshare identifies a temporary share on a source Drive file.
+type PendingUnshare struct {
+	FileID string `json:"file_id"`
+	PermID string `json:"perm_id"`
 }
 
 // Profile is an opened profile.
@@ -146,6 +156,17 @@ func (p *Profile) SaveToken(r config.Role, rec *tokenstore.Record) error {
 func (p *Profile) SetCheck(name string, passed bool, detail string) error {
 	p.Checks[name] = &Check{Passed: passed, At: time.Now().UTC(), Detail: detail}
 	return p.Save()
+}
+
+// ResetChecksForSignIn clears check results that a new sign-in for role makes
+// stale: the token-age check always (the new token starts at age zero), and
+// the copy checks too when the account itself changed.
+func (p *Profile) ResetChecksForSignIn(r config.Role, newEmail string) {
+	delete(p.Checks, CheckTokenAge)
+	if prev := p.Accounts[r]; prev == nil || !strings.EqualFold(prev.Email, newEmail) {
+		delete(p.Checks, CheckGmailImport)
+		delete(p.Checks, CheckDriveCopy)
+	}
 }
 
 // Save writes profile.json.

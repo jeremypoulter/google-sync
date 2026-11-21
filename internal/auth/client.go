@@ -55,11 +55,15 @@ func (s *savingSource) Token() (*oauth2.Token, error) {
 		if t.RefreshToken == "" {
 			t.RefreshToken = s.rec.Token.RefreshToken
 		}
-		s.rec.Token = t
-		s.rec.LastRefresh = time.Now().UTC()
-		if err := s.save(s.rec); err != nil {
+		// Save a candidate first and only adopt it once it is on disk, so a
+		// failed save is retried on the next call.
+		cand := *s.rec
+		cand.Token = t
+		cand.LastRefresh = time.Now().UTC()
+		if err := s.save(&cand); err != nil {
 			return nil, fmt.Errorf("saving refreshed token: %w", err)
 		}
+		*s.rec = cand
 	}
 	return t, nil
 }

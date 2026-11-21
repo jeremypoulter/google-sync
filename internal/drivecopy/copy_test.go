@@ -3,6 +3,7 @@ package drivecopy
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -33,12 +34,21 @@ type fakeSrc struct {
 	shared, unshared bool
 	shareEmail       string
 	notify           string
+	alreadyShared    bool // the new account already has access
+	unshareFails     bool
 }
 
 func (s *fakeSrc) handler() http.Handler {
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /files/doc1", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, map[string]any{"id": "doc1", "name": "Plan", "mimeType": "application/vnd.google-apps.document", "modifiedTime": "2026-01-01T00:00:00Z"})
+	})
+	mux.HandleFunc("GET /files/doc1/permissions", func(w http.ResponseWriter, r *http.Request) {
+		perms := []map[string]string{{"id": "owner", "type": "user", "emailAddress": "me@family.example"}}
+		if s.alreadyShared {
+			perms = append(perms, map[string]string{"id": "permX", "type": "user", "emailAddress": "Me@Gmail.com"})
+		}
+		writeJSON(w, map[string]any{"permissions": perms})
 	})
 	mux.HandleFunc("POST /files/doc1/permissions", func(w http.ResponseWriter, r *http.Request) {
 		var p drive.Permission
@@ -47,6 +57,12 @@ func (s *fakeSrc) handler() http.Handler {
 		writeJSON(w, map[string]string{"id": "perm1"})
 	})
 	mux.HandleFunc("DELETE /files/doc1/permissions/perm1", func(w http.ResponseWriter, r *http.Request) {
+		if s.unshareFails {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(500)
+			_, _ = w.Write([]byte(`{"error":{"code":500,"message":"backend error"}}`))
+			return
+		}
 		s.unshared = true
 		w.WriteHeader(http.StatusNoContent)
 	})
@@ -126,6 +142,37 @@ func TestCopySkipsExisting(t *testing.T) {
 	}
 	if src.shared {
 		t.Error("shared even though a copy exists")
+	}
+}
+
+func TestCopyDefaultsToRootAndKeepsExistingShare(t *testing.T) {
+	src, dst := &fakeSrc{alreadyShared: true}, &fakeDst{}
+	c := &Copier{Src: newService(t, src.handler()), Dst: newService(t, dst.handler()), DstEmail: "me@gmail.com"}
+	if _, err := c.Copy(context.Background(), "doc1"); err != nil {
+		t.Fatal(err)
+	}
+	if src.shared || src.unshared {
+		t.Errorf("existing share must be reused and kept: %+v", src)
+	}
+	if len(dst.copyMeta.Parents) != 1 || dst.copyMeta.Parents[0] != "root" {
+		t.Errorf("parents = %v, want [root]", dst.copyMeta.Parents)
+	}
+}
+
+func TestCopyReportsFailedCleanup(t *testing.T) {
+	src, dst := &fakeSrc{unshareFails: true}, &fakeDst{}
+	c := &Copier{Src: newService(t, src.handler()), Dst: newService(t, dst.handler()), DstEmail: "me@gmail.com"}
+	res, err := c.Copy(context.Background(), "doc1")
+	var ce *CleanupError
+	if !errors.As(err, &ce) || ce.FileID != "doc1" || ce.PermID != "perm1" {
+		t.Fatalf("err = %v, want CleanupError for doc1/perm1", err)
+	}
+	if res == nil || res.DestID != "copy-new" {
+		t.Fatalf("result should still report the copy: %+v", res)
+	}
+	src.unshareFails = false
+	if err := c.Unshare(context.Background(), ce.FileID, ce.PermID); err != nil || !src.unshared {
+		t.Fatalf("retrying cleanup: err=%v unshared=%v", err, src.unshared)
 	}
 }
 

@@ -37,15 +37,21 @@ Useful options:
 
 - `--profile NAME` keeps each person separate (default `default`).
 - `signin old --domain example.com` insists the old account is on that domain.
-- `spike gmail --message ID` copies a specific message (the ID is the last
-  part of the Gmail URL when the message is open). `--label-prefix "Old/"`
-  puts the copied user labels under `Old/`.
+- `spike gmail` copies the most recent message by default, which is all M0
+  needs. `--message ID` copies a specific message, but it needs the Gmail
+  *API* message ID, which is not the code at the end of a Gmail web URL and not
+  the `Message-ID` header. `--label-prefix "Old/"` puts the copied user
+  labels under `Old/`.
 - `spike drive --file ID` copies a specific file (the ID is in its URL).
   `--folder ID` puts the copy in a folder of the new account.
 - Running a spike twice is safe: the second run finds the first copy (Gmail
-  by Message-ID, Drive by the `srcId` app property) and says so instead of
-  copying again. That also exercises the duplicate guard the sync engine
-  will rely on.
+  by the email's Message-ID header, Drive by the `srcId` app property) and
+  says so instead of copying again. That also exercises the duplicate guard
+  the sync engine will rely on. The rare email with no Message-ID header
+  cannot be matched this way and would be imported again; M1's local state
+  covers those.
+- If a Drive copy succeeds but the temporary share cannot be removed, the
+  profile remembers it and the next `spike drive` removes it first.
 
 ## What to look for
 
@@ -58,9 +64,13 @@ Useful options:
 - **Drive**: the copy is a native Google Doc owned by the new account, and the
   old file no longer lists the new account in its sharing (the temporary share
   is removed).
-- **Token check**: if a refresh fails with `invalid_grant`, the "In
-  production" publishing did not avoid the 7-day expiry, and the auth design
-  has to change before M1 (fallback: a weekly re-sign-in prompt).
+- **Token check**: a refresh failing with `invalid_grant` can have ordinary
+  causes: a password change on that account, removing GMigrate from its
+  Third-party connections page, or the app being set back to Testing. Rule
+  those out, sign in again and repeat the 8-day wait. Only if a fresh pair of
+  tokens fails again does the "In production" publishing not avoid the 7-day
+  expiry, and the auth design has to change before M1 (fallback: a weekly
+  re-sign-in prompt).
 
 ## Where things are stored
 
