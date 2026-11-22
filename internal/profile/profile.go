@@ -66,6 +66,23 @@ type Data struct {
 type PendingUnshare struct {
 	FileID string `json:"file_id"`
 	PermID string `json:"perm_id"`
+	// SourceEmail is the old account that owns the file. Only that account can
+	// remove the share, so a record is kept (not dropped on a 404) while a
+	// different account is signed in.
+	SourceEmail string `json:"source_email"`
+}
+
+// PendingUnsharesFor returns the pending records that belong to the given
+// source account.
+func (p *Profile) PendingUnsharesFor(email string) (mine, others []PendingUnshare) {
+	for _, pu := range p.PendingUnshares {
+		if strings.EqualFold(pu.SourceEmail, email) {
+			mine = append(mine, pu)
+		} else {
+			others = append(others, pu)
+		}
+	}
+	return mine, others
 }
 
 // Profile is an opened profile.

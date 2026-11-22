@@ -57,3 +57,18 @@ func TestInvalidName(t *testing.T) {
 		}
 	}
 }
+
+func TestPendingUnsharesFor(t *testing.T) {
+	p, err := Open(t.TempDir(), "x")
+	if err != nil {
+		t.Fatal(err)
+	}
+	p.PendingUnshares = []PendingUnshare{
+		{FileID: "a", PermID: "1", SourceEmail: "Old@Family.example"},
+		{FileID: "b", PermID: "2", SourceEmail: "other@family.example"},
+	}
+	mine, others := p.PendingUnsharesFor("old@family.example")
+	if len(mine) != 1 || mine[0].FileID != "a" || len(others) != 1 || others[0].FileID != "b" {
+		t.Fatalf("mine=%v others=%v", mine, others)
+	}
+}

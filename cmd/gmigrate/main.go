@@ -204,6 +204,13 @@ func cmdSignIn(ctx context.Context, args []string, out io.Writer) error {
 		return fmt.Errorf("%s is already this profile's %s account", id.Email, other)
 	}
 
+	if role == config.RoleOld {
+		if a := p.Accounts[config.RoleOld]; a != nil && !strings.EqualFold(a.Email, id.Email) {
+			if mine, _ := p.PendingUnsharesFor(a.Email); len(mine) > 0 {
+				return fmt.Errorf("%s still has a temporary Drive share to remove; sign in as %s and run `spike drive` first, then switch accounts", a.Email, a.Email)
+			}
+		}
+	}
 	p.ResetChecksForSignIn(role, id.Email)
 	now := time.Now().UTC()
 	if err := p.SaveToken(role, &tokenstore.Record{Token: tok, ObtainedAt: now}); err != nil {

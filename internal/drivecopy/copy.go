@@ -150,15 +150,24 @@ func (e *CleanupError) Unwrap() error { return e.Err }
 // already had access, that permission is reused and created is false, so the
 // caller must not remove it.
 func (c *Copier) share(ctx context.Context, fileID string) (permID string, created bool, err error) {
-	existing, err := c.Src.Permissions.List(fileID).SupportsAllDrives(true).
-		Fields("permissions(id,type,emailAddress)").Context(ctx).Do()
+	// Read every page: a file's permission list can be longer than one page,
+	// and missing an existing grant would make us delete it afterwards.
+	var found string
+	err = c.Src.Permissions.List(fileID).SupportsAllDrives(true).
+		Fields("nextPageToken,permissions(id,type,emailAddress)").
+		Pages(ctx, func(page *drive.PermissionList) error {
+			for _, p := range page.Permissions {
+				if p.Type == "user" && strings.EqualFold(p.EmailAddress, c.DstEmail) {
+					found = p.Id
+				}
+			}
+			return nil
+		})
 	if err != nil {
 		return "", false, fmt.Errorf("reading sharing of %s: %w", fileID, err)
 	}
-	for _, p := range existing.Permissions {
-		if p.Type == "user" && strings.EqualFold(p.EmailAddress, c.DstEmail) {
-			return p.Id, false, nil
-		}
+	if found != "" {
+		return found, false, nil
 	}
 	p, err := c.Src.Permissions.Create(fileID, &drive.Permission{
 		Type:         "user",

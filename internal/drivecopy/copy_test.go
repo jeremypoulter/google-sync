@@ -36,6 +36,8 @@ type fakeSrc struct {
 	notify           string
 	alreadyShared    bool // the new account already has access
 	unshareFails     bool
+	deletes          []string // every permission ID a delete was requested for
+	listPages        bool     // serve the permission list in two pages
 }
 
 func (s *fakeSrc) handler() http.Handler {
@@ -44,11 +46,19 @@ func (s *fakeSrc) handler() http.Handler {
 		writeJSON(w, map[string]any{"id": "doc1", "name": "Plan", "mimeType": "application/vnd.google-apps.document", "modifiedTime": "2026-01-01T00:00:00Z"})
 	})
 	mux.HandleFunc("GET /files/doc1/permissions", func(w http.ResponseWriter, r *http.Request) {
-		perms := []map[string]string{{"id": "owner", "type": "user", "emailAddress": "me@family.example"}}
-		if s.alreadyShared {
-			perms = append(perms, map[string]string{"id": "permX", "type": "user", "emailAddress": "Me@Gmail.com"})
+		owner := map[string]string{"id": "owner", "type": "user", "emailAddress": "me@family.example"}
+		shared := map[string]string{"id": "permX", "type": "user", "emailAddress": "Me@Gmail.com"}
+		switch {
+		case s.listPages && r.URL.Query().Get("pageToken") == "":
+			// The destination's grant is only on the second page.
+			writeJSON(w, map[string]any{"permissions": []any{owner}, "nextPageToken": "page2"})
+		case s.listPages:
+			writeJSON(w, map[string]any{"permissions": []any{shared}})
+		case s.alreadyShared:
+			writeJSON(w, map[string]any{"permissions": []any{owner, shared}})
+		default:
+			writeJSON(w, map[string]any{"permissions": []any{owner}})
 		}
-		writeJSON(w, map[string]any{"permissions": perms})
 	})
 	mux.HandleFunc("POST /files/doc1/permissions", func(w http.ResponseWriter, r *http.Request) {
 		var p drive.Permission
@@ -56,7 +66,8 @@ func (s *fakeSrc) handler() http.Handler {
 		s.shared, s.shareEmail, s.notify = true, p.EmailAddress, r.URL.Query().Get("sendNotificationEmail")
 		writeJSON(w, map[string]string{"id": "perm1"})
 	})
-	mux.HandleFunc("DELETE /files/doc1/permissions/perm1", func(w http.ResponseWriter, r *http.Request) {
+	mux.HandleFunc("DELETE /files/doc1/permissions/{perm}", func(w http.ResponseWriter, r *http.Request) {
+		s.deletes = append(s.deletes, r.PathValue("perm"))
 		if s.unshareFails {
 			w.Header().Set("Content-Type", "application/json")
 			w.WriteHeader(500)
@@ -151,11 +162,22 @@ func TestCopyDefaultsToRootAndKeepsExistingShare(t *testing.T) {
 	if _, err := c.Copy(context.Background(), "doc1"); err != nil {
 		t.Fatal(err)
 	}
-	if src.shared || src.unshared {
+	if src.shared || src.unshared || len(src.deletes) != 0 {
 		t.Errorf("existing share must be reused and kept: %+v", src)
 	}
 	if len(dst.copyMeta.Parents) != 1 || dst.copyMeta.Parents[0] != "root" {
 		t.Errorf("parents = %v, want [root]", dst.copyMeta.Parents)
+	}
+}
+
+func TestCopyFindsExistingShareOnLaterPage(t *testing.T) {
+	src, dst := &fakeSrc{listPages: true}, &fakeDst{}
+	c := &Copier{Src: newService(t, src.handler()), Dst: newService(t, dst.handler()), DstEmail: "me@gmail.com"}
+	if _, err := c.Copy(context.Background(), "doc1"); err != nil {
+		t.Fatal(err)
+	}
+	if src.shared || len(src.deletes) != 0 {
+		t.Errorf("grant on page 2 must be found and left alone: %+v", src)
 	}
 }
 

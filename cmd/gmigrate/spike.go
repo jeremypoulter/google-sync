@@ -124,8 +124,16 @@ func cmdSpikeDrive(ctx context.Context, args []string, out io.Writer) error {
 
 	// Remove any temporary shares an earlier run could not clean up.
 	if len(p.PendingUnshares) > 0 {
+		srcAcct := p.Accounts[config.RoleOld]
+		if srcAcct == nil {
+			return errors.New("old account: not signed in (run: gmigrate signin old)")
+		}
+		mine, others := p.PendingUnsharesFor(srcAcct.Email)
+		if len(others) > 0 {
+			return fail(p, profile.CheckDriveCopy, fmt.Errorf("temporary shares from an earlier run belong to another old account (%s); sign in to that account again to remove them", others[0].SourceEmail))
+		}
 		var still []profile.PendingUnshare
-		for _, pu := range p.PendingUnshares {
+		for _, pu := range mine {
 			if err := cp.Unshare(ctx, pu.FileID, pu.PermID); err != nil {
 				fmt.Fprintf(out, "Still cannot remove the temporary share on %s: %v\n", pu.FileID, err)
 				still = append(still, pu)
@@ -160,7 +168,7 @@ func cmdSpikeDrive(ctx context.Context, args []string, out io.Writer) error {
 	res, err := cp.Copy(ctx, id)
 	var cleanup *drivecopy.CleanupError
 	if errors.As(err, &cleanup) {
-		p.PendingUnshares = append(p.PendingUnshares, profile.PendingUnshare{FileID: cleanup.FileID, PermID: cleanup.PermID})
+		p.PendingUnshares = append(p.PendingUnshares, profile.PendingUnshare{FileID: cleanup.FileID, PermID: cleanup.PermID, SourceEmail: p.Accounts[config.RoleOld].Email})
 		p.Checks[profile.CheckDriveCopy] = &profile.Check{At: time.Now().UTC(), Detail: err.Error()}
 		if serr := p.Save(); serr != nil {
 			return fmt.Errorf("%w; ALSO could not record it for retry (%v): remove the new account from the sharing of source file %s by hand", err, serr, cleanup.FileID)
