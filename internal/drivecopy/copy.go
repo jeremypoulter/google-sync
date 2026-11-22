@@ -180,17 +180,24 @@ func (c *Copier) share(ctx context.Context, fileID string) (permID string, creat
 	return p.Id, true, nil
 }
 
-// Unshare removes a temporary share created by Copy. A share that is already
-// gone counts as removed.
+// Unshare removes a temporary share created by Copy. A 404 on the delete only
+// counts as "already removed" if this account can still see the file;
+// otherwise the 404 may just mean the wrong account is signed in.
 func (c *Copier) Unshare(ctx context.Context, fileID, permID string) error {
 	// Use a fresh context so a cancelled run still removes the share.
 	cctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
 	defer cancel()
 	err := c.Src.Permissions.Delete(fileID, permID).SupportsAllDrives(true).Context(cctx).Do()
-	if err != nil && !isStatus(err, http.StatusNotFound) {
-		return fmt.Errorf("removing temporary share on %s: %w", fileID, err)
+	if err == nil {
+		return nil
 	}
-	return nil
+	if isStatus(err, http.StatusNotFound) {
+		if _, gerr := c.Src.Files.Get(fileID).Fields("id").SupportsAllDrives(true).Context(cctx).Do(); gerr == nil {
+			return nil // file visible, permission already gone
+		}
+		return fmt.Errorf("cannot confirm the temporary share on %s is gone: this account cannot see the file (is it the account that owns it?)", fileID)
+	}
+	return fmt.Errorf("removing temporary share on %s: %w", fileID, err)
 }
 
 // copyWithRetry calls files.copy as the destination, retrying 404s for a

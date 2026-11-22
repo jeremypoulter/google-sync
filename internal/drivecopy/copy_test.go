@@ -181,6 +181,29 @@ func TestCopyFindsExistingShareOnLaterPage(t *testing.T) {
 	}
 }
 
+func TestUnshare404NeedsVisibleFile(t *testing.T) {
+	// Permission delete returns 404 for perm "gone"; the file is visible
+	// (doc1) so that counts as removed. For an unknown file, the 404 must
+	// not be taken as success.
+	mux := http.NewServeMux()
+	notFound := func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(404)
+		_, _ = w.Write([]byte(`{"error":{"code":404,"message":"not found"}}`))
+	}
+	mux.HandleFunc("DELETE /files/doc1/permissions/gone", notFound)
+	mux.HandleFunc("DELETE /files/other/permissions/gone", notFound)
+	mux.HandleFunc("GET /files/doc1", func(w http.ResponseWriter, r *http.Request) { writeJSON(w, map[string]string{"id": "doc1"}) })
+	mux.HandleFunc("GET /files/other", notFound)
+	c := &Copier{Src: newService(t, mux)}
+	if err := c.Unshare(context.Background(), "doc1", "gone"); err != nil {
+		t.Errorf("visible file, gone permission: %v", err)
+	}
+	if err := c.Unshare(context.Background(), "other", "gone"); err == nil {
+		t.Error("404 for a file this account cannot see was accepted as removed")
+	}
+}
+
 func TestCopyReportsFailedCleanup(t *testing.T) {
 	src, dst := &fakeSrc{unshareFails: true}, &fakeDst{}
 	c := &Copier{Src: newService(t, src.handler()), Dst: newService(t, dst.handler()), DstEmail: "me@gmail.com"}
