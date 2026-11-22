@@ -68,7 +68,7 @@ Takeout is on for users. Not needed for M0.
 
 ## 7. Build the exe
 
-With Go 1.26+ installed (<https://go.dev/dl/>):
+With Go 1.27+ installed (<https://go.dev/dl/>):
 
 ```powershell
 .\scripts\build.ps1 -ClientFile C:\path\to\client_secret_XXXX.json

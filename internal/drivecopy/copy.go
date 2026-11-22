@@ -213,7 +213,7 @@ func (c *Copier) downloadUpload(ctx context.Context, f *drive.File, meta *drive.
 	if err != nil {
 		return nil, fmt.Errorf("downloading %q: %w", f.Name, err)
 	}
-	defer resp.Body.Close()
+	defer func() { _ = resp.Body.Close() }()
 	meta.MimeType = f.MimeType
 	out, err := c.Dst.Files.Create(meta).
 		Media(resp.Body, googleapi.ContentType(f.MimeType)).

@@ -28,7 +28,7 @@ type Identity struct {
 func IdentityFromToken(tok *oauth2.Token) (*Identity, error) {
 	raw, _ := tok.Extra("id_token").(string)
 	if raw == "" {
-		return nil, errors.New("Google did not return an ID token (is the openid scope enabled?)")
+		return nil, errors.New("google did not return an ID token (is the openid scope enabled?)")
 	}
 	parts := strings.Split(raw, ".")
 	if len(parts) != 3 {

@@ -9,3 +9,5 @@ client*.apps.googleusercontent.com.json
 # Local profiles if --data-dir points inside the repo
 /profiles/
 *.tok
+test-results/
+*.cover

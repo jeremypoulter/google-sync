@@ -1,0 +1,10 @@
+version: "2"
+linters:
+  settings:
+    errcheck:
+      exclude-functions:
+        # Writing progress text to the terminal or an HTTP response: nothing
+        # useful can be done if it fails.
+        - fmt.Fprint
+        - fmt.Fprintf
+        - fmt.Fprintln

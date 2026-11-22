@@ -54,7 +54,7 @@ gmigrate status             Accounts and M0 progress
 
 ## Development
 
-Requires Go 1.26 or later.
+Requires Go 1.27 or later.
 
 ```sh
 go test ./...

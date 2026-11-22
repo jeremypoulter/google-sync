@@ -99,8 +99,8 @@ func TestSignInLoopback(t *testing.T) {
 		go func() {
 			resp, err := http.Get(q.Get("redirect_uri") + "?state=" + url.QueryEscape(q.Get("state")) + "&code=the-code")
 			if err == nil {
-				io.Copy(io.Discard, resp.Body)
-				resp.Body.Close()
+				_, _ = io.Copy(io.Discard, resp.Body)
+				_ = resp.Body.Close()
 			}
 		}()
 		return nil

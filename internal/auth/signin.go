@@ -47,7 +47,7 @@ func SignIn(ctx context.Context, cfg *oauth2.Config, opt SignInOptions) (*oauth2
 	if err != nil {
 		return nil, fmt.Errorf("starting local sign-in listener: %w", err)
 	}
-	defer ln.Close()
+	defer func() { _ = ln.Close() }()
 
 	c := *cfg
 	c.RedirectURL = fmt.Sprintf("http://127.0.0.1:%d/", ln.Addr().(*net.TCPAddr).Port)
@@ -132,7 +132,7 @@ func SignIn(ctx context.Context, cfg *oauth2.Config, opt SignInOptions) (*oauth2
 			return nil, fmt.Errorf("exchanging authorization code: %w", err)
 		}
 		if tok.RefreshToken == "" {
-			return nil, errors.New("Google did not return a refresh token; remove GMigrate from the account's Third-party connections page and sign in again")
+			return nil, errors.New("google did not return a refresh token; remove GMigrate from the account's Third-party connections page and sign in again")
 		}
 		return tok, nil
 	}
