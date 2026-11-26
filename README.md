@@ -43,6 +43,8 @@ of times to pick up only what changed.
 1. Admin: do the one-time [admin setup](docs/admin-setup.md) (Google Cloud
    project, OAuth client, trust it in the Admin console) and build the exe.
 2. Each person: run the [M0 checks](docs/m0-spike.md).
+3. Before real accounts: follow the [test plan](docs/test-plan.md) and
+   [manual test checklist](docs/manual-test-checklist.md).
 
 ```text
 gmigrate signin old|new     Sign in to the old Workspace or new personal account
@@ -71,7 +73,7 @@ internal/profile/    Per-person profile directory and M0 check results
 internal/gmailcopy/  Copy one Gmail message with labels and de-duplication
 internal/drivecopy/  Share + copy one Drive file, with download/upload fallback
 scripts/             Build scripts that embed the OAuth client
-docs/                Admin setup and M0 guide
+docs/                Admin setup, M0 guide, test plan and checklist
 ```
 
 ## Roadmap
